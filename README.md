@@ -1,10 +1,24 @@
 # Bitcoin-client-wrapper
 
+## Requirements
+
+1. Go version 1.12.5 and higher for development and building
+2. Docker version 2.0 and higher for testing 
+
 ## Launch instructions
 
 1. Set two required global variables: RPC_ADDR (address of the bitcoin node to connect to) and MAIN_PORT (port to run the server on)
 2. Set the optional global variable, which is responsible for the debug log in the server responses: ENV. Set it to "dev" if you want the extra debug info in case of errors
-3. Either build and run source files or launch the built binary
+3. Download library from github.com/go-chi/chi
+4. Either build (for example, using the build.sh script from the test folder. Binary will be placed into the test/app/bin folder) and run source files or launch the built binary
+
+## Testing
+
+Run the following command from inside the "test" folder. Don't forget to change {port} with the port of your choice
+
+<pre>
+MAIN_PORT={port} go test -v
+</pre>
 
 ## API description
 

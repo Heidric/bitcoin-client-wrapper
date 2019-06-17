@@ -2,6 +2,7 @@ package v1
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/rpc/jsonrpc"
@@ -42,7 +43,7 @@ type errorData struct {
 }
 
 type rpcResponse struct {
-	Result transactionData
+	Result interface{}
 	Error  errorData
 	Id     string
 }
@@ -96,7 +97,7 @@ type getNewAddressArgsStruct struct {
 }
 
 func jsonResponse(w http.ResponseWriter, data interface{}, code int) {
-	if code == 500 && os.Getenv("ENV") == "dev" {
+	if code == http.StatusInternalServerError && os.Getenv("ENV") == "dev" {
 		data = struct {
 			Message string
 		}{
@@ -108,7 +109,7 @@ func jsonResponse(w http.ResponseWriter, data interface{}, code int) {
 
 	if err != nil {
 		log.Print(err)
-		if code == 500 && os.Getenv("ENV") == "dev" {
+		if code == http.StatusInternalServerError && os.Getenv("ENV") == "dev" {
 			http.Error(w, "Something went wrong", http.StatusInternalServerError)
 			return
 		}
@@ -123,7 +124,7 @@ func jsonResponse(w http.ResponseWriter, data interface{}, code int) {
 
 	if err != nil {
 		log.Print(err)
-		if code == 500 && os.Getenv("ENV") == "dev" {
+		if code == http.StatusInternalServerError && os.Getenv("ENV") == "dev" {
 			http.Error(w, "Something went wrong", http.StatusInternalServerError)
 			return
 		}
@@ -142,33 +143,37 @@ func GetTransaction(w http.ResponseWriter, r *http.Request) {
 		watchOnly = false
 	}
 
-	client, err := jsonrpc.Dial("tcp", os.Getenv("RPC_ADDR"))
-
-	if err != nil {
-		jsonResponse(w, err, http.StatusInternalServerError)
-		log.Printf("Error in dialing. %s", err)
-		return
-	}
-
-	args := &getTransactionArgs{
-		Txid:              transactionId,
-		Include_watchonly: watchOnly,
-	}
-
 	var result rpcResponse
 
-	err = client.Call("gettransaction", args, &result)
+	if os.Getenv("ENV") == "test" {
+		result.Result = getTransactionResult
+	} else {
+		client, err := jsonrpc.Dial("tcp", os.Getenv("RPC_ADDR"))
 
-	if err != nil {
-		jsonResponse(w, err, http.StatusInternalServerError)
-		log.Printf("Error getting transaction: %d", err)
-		return
-	}
+		if err != nil {
+			jsonResponse(w, err, http.StatusInternalServerError)
+			log.Printf("Error in dialing. %s", err)
+			return
+		}
 
-	err = client.Close()
+		args := &getTransactionArgs{
+			Txid:              transactionId,
+			Include_watchonly: watchOnly,
+		}
 
-	if err != nil {
-		log.Printf("Error closing connection: %d", err)
+		err = client.Call("gettransaction", args, &result)
+
+		if err != nil {
+			jsonResponse(w, err, http.StatusInternalServerError)
+			log.Printf("Error getting transaction: %d", err)
+			return
+		}
+
+		err = client.Close()
+
+		if err != nil {
+			log.Printf("Error closing connection: %d", err)
+		}
 	}
 
 	jsonResponse(w, result.Result, http.StatusOK)
@@ -217,55 +222,63 @@ func SendToAddress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := jsonrpc.Dial("tcp", os.Getenv("RPC_ADDR"))
-
-	if err != nil {
-		jsonResponse(w, err, http.StatusInternalServerError)
-		log.Printf("Error in dialing. %s", err)
-		return
-	}
-
 	var result rpcResponse
 
-	passPhraseArgs := &passPhraseArgsStruct{
-		Passphrase: args.Passphrase,
-		Timeout:    args.Timeout,
+	if os.Getenv("ENV") == "test" {
+		result.Result = sendToAddressResult
+	} else {
+		client, err := jsonrpc.Dial("tcp", os.Getenv("RPC_ADDR"))
+
+		if err != nil {
+			jsonResponse(w, err, http.StatusInternalServerError)
+			log.Printf("Error in dialing. %s", err)
+			return
+		}
+
+		passPhraseArgs := &passPhraseArgsStruct{
+			Passphrase: args.Passphrase,
+			Timeout:    args.Timeout,
+		}
+
+		err = client.Call("walletpassphrase", passPhraseArgs, &result)
+
+		if err != nil {
+			jsonResponse(w, err, http.StatusInternalServerError)
+			log.Printf("Error sending Passphrase: %d", err)
+			return
+		}
+
+		sendToAddressArgs := &sendToAddressArgsStruct{
+			Address:               args.Address,
+			Amount:                args.Amount,
+			Comment:               args.Comment,
+			Comment_to:            args.Comment_to,
+			Subtractfeefromamount: args.Subtractfeefromamount,
+			Replaceable:           args.Replaceable,
+			Conf_target:           args.Conf_target,
+			Estimate_mode:         args.Estimate_mode,
+		}
+
+		err = client.Call("sendtoaddress", sendToAddressArgs, &result)
+
+		if err != nil {
+			jsonResponse(w, err, http.StatusInternalServerError)
+			log.Printf("Error getting transaction: %d", err)
+			return
+		}
+
+		err = client.Close()
+
+		if err != nil {
+			log.Printf("Error closing connection: %d", err)
+		}
 	}
 
-	err = client.Call("walletpassphrase", passPhraseArgs, &result)
-
-	if err != nil {
-		jsonResponse(w, err, http.StatusInternalServerError)
-		log.Printf("Error sending Passphrase: %d", err)
-		return
-	}
-
-	sendToAddressArgs := &sendToAddressArgsStruct{
-		Address:               args.Address,
-		Amount:                args.Amount,
-		Comment:               args.Comment,
-		Comment_to:            args.Comment_to,
-		Subtractfeefromamount: args.Subtractfeefromamount,
-		Replaceable:           args.Replaceable,
-		Conf_target:           args.Conf_target,
-		Estimate_mode:         args.Estimate_mode,
-	}
-
-	err = client.Call("sendtoaddress", sendToAddressArgs, &result)
-
-	if err != nil {
-		jsonResponse(w, err, http.StatusInternalServerError)
-		log.Printf("Error getting transaction: %d", err)
-		return
-	}
-
-	err = client.Close()
-
-	if err != nil {
-		log.Printf("Error closing connection: %d", err)
-	}
-
-	jsonResponse(w, result.Result, http.StatusOK)
+	jsonResponse(w, struct {
+		Txid string
+	}{
+		Txid: fmt.Sprintf("%s", result.Result),
+	}, http.StatusOK)
 }
 
 func GetNewAddress(w http.ResponseWriter, r *http.Request) {
@@ -288,7 +301,7 @@ func GetNewAddress(w http.ResponseWriter, r *http.Request) {
 			Message: "Passphrase is required",
 		}
 		jsonResponse(w, requestError, http.StatusBadRequest)
-		log.Println("Passphrase is required")
+		log.Println("Passphrase was not provided")
 		return
 	}
 
@@ -307,55 +320,63 @@ func GetNewAddress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := jsonrpc.Dial("tcp", os.Getenv("RPC_ADDR"))
-
-	if err != nil {
-		jsonResponse(w, err, http.StatusInternalServerError)
-		log.Printf("Error in dialing. %s", err)
-		return
-	}
-
 	var result rpcResponse
 
-	passPhraseArgs := &passPhraseArgsStruct{
-		Passphrase: args.Passphrase,
-		Timeout:    args.Timeout,
+	if os.Getenv("ENV") == "test" {
+		result.Result = getNewAddressResult
+	} else {
+		client, err := jsonrpc.Dial("tcp", os.Getenv("RPC_ADDR"))
+
+		if err != nil {
+			jsonResponse(w, err, http.StatusInternalServerError)
+			log.Printf("Error in dialing. %s", err)
+			return
+		}
+
+		passPhraseArgs := &passPhraseArgsStruct{
+			Passphrase: args.Passphrase,
+			Timeout:    args.Timeout,
+		}
+
+		err = client.Call("walletpassphrase", passPhraseArgs, &result)
+
+		if err != nil {
+			jsonResponse(w, err, http.StatusInternalServerError)
+			log.Printf("Error getting transaction: %d", err)
+			return
+		}
+
+		getNewAddressArgs := &getNewAddressArgsStruct{
+			Label:        args.Label,
+			Address_type: args.Address_type,
+		}
+
+		err = client.Call("getnewaddress", getNewAddressArgs, &result)
+
+		if err != nil {
+			jsonResponse(w, err, http.StatusInternalServerError)
+			log.Printf("Error getting transaction: %d", err)
+			return
+		}
+
+		err = client.Close()
+
+		if err != nil {
+			log.Printf("Error closing connection: %d", err)
+		}
 	}
 
-	err = client.Call("walletpassphrase", passPhraseArgs, &result)
-
-	if err != nil {
-		jsonResponse(w, err, http.StatusInternalServerError)
-		log.Printf("Error getting transaction: %d", err)
-		return
-	}
-
-	getNewAddressArgs := &getNewAddressArgsStruct{
-		Label:        args.Label,
-		Address_type: args.Address_type,
-	}
-
-	err = client.Call("getnewaddress", getNewAddressArgs, &result)
-
-	if err != nil {
-		jsonResponse(w, err, http.StatusInternalServerError)
-		log.Printf("Error getting transaction: %d", err)
-		return
-	}
-
-	err = client.Close()
-
-	if err != nil {
-		log.Printf("Error closing connection: %d", err)
-	}
-
-	jsonResponse(w, result.Result, http.StatusOK)
+	jsonResponse(w, struct {
+		Address string
+	}{
+		Address: fmt.Sprintf("%s", result.Result),
+	}, http.StatusOK)
 }
 
 func BtcRouter() http.Handler {
 	router := chi.NewRouter()
 	router.Get("/transaction/{id}", GetTransaction)
 	router.Post("/send-to-address", SendToAddress)
-	router.Post("/get-new-Address", GetNewAddress)
+	router.Post("/get-new-address", GetNewAddress)
 	return router
 }

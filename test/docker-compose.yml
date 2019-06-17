@@ -1,0 +1,11 @@
+version: '2'
+services:
+  app:
+    image: test_app
+    build: ./app
+    container_name: test_app
+    ports:
+      - $MAIN_PORT:$MAIN_PORT
+    environment:
+      MAIN_PORT: $MAIN_PORT
+      ENV: $ENV
